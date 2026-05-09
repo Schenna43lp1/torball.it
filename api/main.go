@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -9,16 +11,23 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 var db *sql.DB
+var rdb *redis.Client
+var ctx = context.Background()
+
+var jwtSecret = []byte(getEnv("JWT_SECRET", "CHANGE_ME"))
 
 // Models
 
-type HealthResponse struct {
-	Status string `json:"status"`
-	DB     string `json:"db"`
+type Claims struct {
+	Username string `json:"username"`
+	Role     string `json:"role"`
+	jwt.RegisteredClaims
 }
 
 type TableEntry struct {
@@ -33,20 +42,6 @@ type TableEntry struct {
 	Points         int    `json:"points"`
 }
 
-type MatchEntry struct {
-	ID         int   `json:"id"`
-	HomeTeam   string `json:"home_team"`
-	AwayTeam   string `json:"away_team"`
-	HomeGoals  *int64 `json:"home_goals"`
-	AwayGoals  *int64 `json:"away_goals"`
-	Status     string `json:"status"`
-}
-
-type LiveEntry struct {
-	Message   string `json:"message"`
-	CreatedAt string `json:"created_at"`
-}
-
 func main() {
 
 	dsn := os.Getenv("DB_USER") + ":" + os.Getenv("DB_PASS") + "@tcp(" + os.Getenv("DB_HOST") + ":3306)/" + os.Getenv("DB_NAME") + "?parseTime=true"
@@ -57,9 +52,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	db.SetMaxOpenConns(20)
-	db.SetMaxIdleConns(10)
-	db.SetConnMaxLifetime(5 * time.Minute)
+	rdb = redis.NewClient(&redis.Options{
+		Addr: getEnv("REDIS_ADDR", "redis:6379"),
+	})
 
 	if err := db.Ping(); err != nil {
 		log.Fatal(err)
@@ -76,36 +71,45 @@ func main() {
 	{
 		api.GET("/health", healthHandler)
 		api.GET("/table", tableHandler)
-		api.GET("/matches", matchesHandler)
-		api.GET("/live", liveHandler)
+		api.GET("/docs", swaggerHandler)
+		api.POST("/token", tokenHandler)
+	}
+
+	admin := api.Group("/admin")
+	admin.Use(jwtMiddleware("admin", "referee"))
+	{
+		admin.GET("/secure", secureHandler)
 	}
 
 	log.Println("Torball Go API listening on :8082")
 	log.Fatal(router.Run(":8082"))
 }
 
-func corsMiddleware() gin.HandlerFunc {
+func getEnv(key, fallback string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	return value
+}
 
+func corsMiddleware() gin.HandlerFunc {
 	allowedOrigins := strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",")
 
 	return func(c *gin.Context) {
-
 		origin := c.Request.Header.Get("Origin")
 
 		for _, allowed := range allowedOrigins {
 			allowed = strings.TrimSpace(allowed)
-
 			if allowed != "" && origin == allowed {
 				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-				break
 			}
 		}
 
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		c.Writer.Header().Set("Content-Type", "application/json")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 
-		if c.Request.Method == http.MethodOptions {
+		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
 		}
@@ -114,23 +118,99 @@ func corsMiddleware() gin.HandlerFunc {
 	}
 }
 
+func jwtMiddleware(roles ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.AbortWithStatusJSON(401, gin.H{"error": "missing token"})
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+		token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+			return jwtSecret, nil
+		})
+
+		if err != nil || !token.Valid {
+			c.AbortWithStatusJSON(401, gin.H{"error": "invalid token"})
+			return
+		}
+
+		claims := token.Claims.(*Claims)
+
+		for _, role := range roles {
+			if claims.Role == role {
+				c.Next()
+				return
+			}
+		}
+
+		c.AbortWithStatusJSON(403, gin.H{"error": "forbidden"})
+	}
+}
+
+func tokenHandler(c *gin.Context) {
+
+	var req struct {
+		Username string `json:"username"`
+		Role     string `json:"role"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"error": "invalid payload"})
+		return
+	}
+
+	expires := time.Now().Add(24 * time.Hour)
+
+	claims := Claims{
+		Username: req.Username,
+		Role:     req.Role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expires),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	tokenString, err := token.SignedString(jwtSecret)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "token generation failed"})
+		return
+	}
+
+	c.JSON(200, gin.H{"token": tokenString})
+}
+
 func healthHandler(c *gin.Context) {
 
-	status := "ok"
 	dbStatus := "ok"
+	redisStatus := "ok"
 
 	if err := db.Ping(); err != nil {
-		status = "degraded"
 		dbStatus = err.Error()
 	}
 
-	c.JSON(200, HealthResponse{
-		Status: status,
-		DB:     dbStatus,
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		redisStatus = err.Error()
+	}
+
+	c.JSON(200, gin.H{
+		"status": "ok",
+		"database": dbStatus,
+		"redis": redisStatus,
 	})
 }
 
 func tableHandler(c *gin.Context) {
+
+	cached, err := rdb.Get(ctx, "table_cache").Result()
+	if err == nil {
+		c.Data(200, "application/json", []byte(cached))
+		return
+	}
 
 	rows, err := db.Query(`
 		SELECT team_name, games_played, wins, draws, losses,
@@ -148,7 +228,7 @@ func tableHandler(c *gin.Context) {
 	for rows.Next() {
 		var entry TableEntry
 
-		if err := rows.Scan(
+		rows.Scan(
 			&entry.Team,
 			&entry.GamesPlayed,
 			&entry.Wins,
@@ -158,96 +238,37 @@ func tableHandler(c *gin.Context) {
 			&entry.GoalsAgainst,
 			&entry.GoalDifference,
 			&entry.Points,
-		); err != nil {
-			c.JSON(500, gin.H{"error": "scan failed"})
-			return
-		}
+		)
 
 		result = append(result, entry)
 	}
 
-	c.JSON(200, result)
+	jsonData, _ := json.Marshal(result)
+
+	rdb.Set(ctx, "table_cache", jsonData, 30*time.Second)
+
+	c.Data(200, "application/json", jsonData)
 }
 
-func matchesHandler(c *gin.Context) {
-
-	rows, err := db.Query(`
-		SELECT
-		m.id,
-		ht.name,
-		at.name,
-		m.home_goals,
-		m.away_goals,
-		m.match_status
-		FROM matches m
-		JOIN teams ht ON ht.id = m.home_team_id
-		JOIN teams at ON at.id = m.away_team_id
-		ORDER BY m.id DESC
-	`)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "database query failed"})
-		return
-	}
-	defer rows.Close()
-
-	var result []MatchEntry
-
-	for rows.Next() {
-		var entry MatchEntry
-		var hg, ag sql.NullInt64
-
-		if err := rows.Scan(
-			&entry.ID,
-			&entry.HomeTeam,
-			&entry.AwayTeam,
-			&hg,
-			&ag,
-			&entry.Status,
-		); err != nil {
-			c.JSON(500, gin.H{"error": "scan failed"})
-			return
-		}
-
-		if hg.Valid {
-			entry.HomeGoals = &hg.Int64
-		}
-
-		if ag.Valid {
-			entry.AwayGoals = &ag.Int64
-		}
-
-		result = append(result, entry)
-	}
-
-	c.JSON(200, result)
+func swaggerHandler(c *gin.Context) {
+	c.JSON(200, gin.H{
+		"openapi": "3.0.0",
+		"info": gin.H{
+			"title": "Torball API",
+			"version": "1.0.0",
+		},
+		"paths": gin.H{
+			"/api/table": gin.H{
+				"get": gin.H{
+					"summary": "League table",
+				},
+			},
+		},
+	})
 }
 
-func liveHandler(c *gin.Context) {
-
-	rows, err := db.Query(`
-		SELECT message, created_at
-		FROM live_ticker
-		ORDER BY created_at DESC
-		LIMIT 20
-	`)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "database query failed"})
-		return
-	}
-	defer rows.Close()
-
-	var result []LiveEntry
-
-	for rows.Next() {
-		var entry LiveEntry
-
-		if err := rows.Scan(&entry.Message, &entry.CreatedAt); err != nil {
-			c.JSON(500, gin.H{"error": "scan failed"})
-			return
-		}
-
-		result = append(result, entry)
-	}
-
-	c.JSON(200, result)
+func secureHandler(c *gin.Context) {
+	c.JSON(200, gin.H{
+		"status": "authorized",
+	})
 }
