@@ -18,6 +18,14 @@ services:
       - ./:/var/www/html
     depends_on:
       - torball-db
+      - websocket
+
+  websocket:
+    build: ./websocket
+    container_name: torball-websocket
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
 
   torball-db:
     image: mariadb:11
