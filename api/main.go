@@ -2,15 +2,50 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"log"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 
+	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
 )
 
 var db *sql.DB
+
+// Models
+
+type HealthResponse struct {
+	Status string `json:"status"`
+	DB     string `json:"db"`
+}
+
+type TableEntry struct {
+	Team           string `json:"team"`
+	GamesPlayed    int    `json:"games_played"`
+	Wins           int    `json:"wins"`
+	Draws          int    `json:"draws"`
+	Losses         int    `json:"losses"`
+	GoalsFor       int    `json:"goals_for"`
+	GoalsAgainst   int    `json:"goals_against"`
+	GoalDifference int    `json:"goal_difference"`
+	Points         int    `json:"points"`
+}
+
+type MatchEntry struct {
+	ID         int   `json:"id"`
+	HomeTeam   string `json:"home_team"`
+	AwayTeam   string `json:"away_team"`
+	HomeGoals  *int64 `json:"home_goals"`
+	AwayGoals  *int64 `json:"away_goals"`
+	Status     string `json:"status"`
+}
+
+type LiveEntry struct {
+	Message   string `json:"message"`
+	CreatedAt string `json:"created_at"`
+}
 
 func main() {
 
@@ -22,29 +57,80 @@ func main() {
 		log.Fatal(err)
 	}
 
-	http.HandleFunc("/api/health", healthHandler)
-	http.HandleFunc("/api/table", tableHandler)
-	http.HandleFunc("/api/matches", matchesHandler)
-	http.HandleFunc("/api/live", liveHandler)
+	db.SetMaxOpenConns(20)
+	db.SetMaxIdleConns(10)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
+	if err := db.Ping(); err != nil {
+		log.Fatal(err)
+	}
+
+	gin.SetMode(gin.ReleaseMode)
+
+	router := gin.New()
+	router.Use(gin.Logger())
+	router.Use(gin.Recovery())
+	router.Use(corsMiddleware())
+
+	api := router.Group("/api")
+	{
+		api.GET("/health", healthHandler)
+		api.GET("/table", tableHandler)
+		api.GET("/matches", matchesHandler)
+		api.GET("/live", liveHandler)
+	}
 
 	log.Println("Torball Go API listening on :8082")
-	log.Fatal(http.ListenAndServe(":8082", nil))
+	log.Fatal(router.Run(":8082"))
 }
 
-func enableCors(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+func corsMiddleware() gin.HandlerFunc {
+
+	allowedOrigins := strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",")
+
+	return func(c *gin.Context) {
+
+		origin := c.Request.Header.Get("Origin")
+
+		for _, allowed := range allowedOrigins {
+			allowed = strings.TrimSpace(allowed)
+
+			if allowed != "" && origin == allowed {
+				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+				break
+			}
+		}
+
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Writer.Header().Set("Content-Type", "application/json")
+
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	}
 }
 
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	enableCors(w)
-	json.NewEncoder(w).Encode(map[string]string{
-		"status": "ok",
+func healthHandler(c *gin.Context) {
+
+	status := "ok"
+	dbStatus := "ok"
+
+	if err := db.Ping(); err != nil {
+		status = "degraded"
+		dbStatus = err.Error()
+	}
+
+	c.JSON(200, HealthResponse{
+		Status: status,
+		DB:     dbStatus,
 	})
 }
 
-func tableHandler(w http.ResponseWriter, r *http.Request) {
-	enableCors(w)
+func tableHandler(c *gin.Context) {
 
 	rows, err := db.Query(`
 		SELECT team_name, games_played, wins, draws, losses,
@@ -52,37 +138,38 @@ func tableHandler(w http.ResponseWriter, r *http.Request) {
 		FROM league_table
 	`)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		c.JSON(500, gin.H{"error": "database query failed"})
 		return
 	}
 	defer rows.Close()
 
-	var result []map[string]interface{}
+	var result []TableEntry
 
 	for rows.Next() {
-		var team string
-		var gp, w1, d, l, gf, ga, gd, pts int
+		var entry TableEntry
 
-		rows.Scan(&team, &gp, &w1, &d, &l, &gf, &ga, &gd, &pts)
+		if err := rows.Scan(
+			&entry.Team,
+			&entry.GamesPlayed,
+			&entry.Wins,
+			&entry.Draws,
+			&entry.Losses,
+			&entry.GoalsFor,
+			&entry.GoalsAgainst,
+			&entry.GoalDifference,
+			&entry.Points,
+		); err != nil {
+			c.JSON(500, gin.H{"error": "scan failed"})
+			return
+		}
 
-		result = append(result, map[string]interface{}{
-			"team": team,
-			"games_played": gp,
-			"wins": w1,
-			"draws": d,
-			"losses": l,
-			"goals_for": gf,
-			"goals_against": ga,
-			"goal_difference": gd,
-			"points": pts,
-		})
+		result = append(result, entry)
 	}
 
-	json.NewEncoder(w).Encode(result)
+	c.JSON(200, result)
 }
 
-func matchesHandler(w http.ResponseWriter, r *http.Request) {
-	enableCors(w)
+func matchesHandler(c *gin.Context) {
 
 	rows, err := db.Query(`
 		SELECT
@@ -98,35 +185,44 @@ func matchesHandler(w http.ResponseWriter, r *http.Request) {
 		ORDER BY m.id DESC
 	`)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		c.JSON(500, gin.H{"error": "database query failed"})
 		return
 	}
 	defer rows.Close()
 
-	var result []map[string]interface{}
+	var result []MatchEntry
 
 	for rows.Next() {
-		var id int
-		var home, away, status string
+		var entry MatchEntry
 		var hg, ag sql.NullInt64
 
-		rows.Scan(&id, &home, &away, &hg, &ag, &status)
+		if err := rows.Scan(
+			&entry.ID,
+			&entry.HomeTeam,
+			&entry.AwayTeam,
+			&hg,
+			&ag,
+			&entry.Status,
+		); err != nil {
+			c.JSON(500, gin.H{"error": "scan failed"})
+			return
+		}
 
-		result = append(result, map[string]interface{}{
-			"id": id,
-			"home_team": home,
-			"away_team": away,
-			"home_goals": hg.Int64,
-			"away_goals": ag.Int64,
-			"status": status,
-		})
+		if hg.Valid {
+			entry.HomeGoals = &hg.Int64
+		}
+
+		if ag.Valid {
+			entry.AwayGoals = &ag.Int64
+		}
+
+		result = append(result, entry)
 	}
 
-	json.NewEncoder(w).Encode(result)
+	c.JSON(200, result)
 }
 
-func liveHandler(w http.ResponseWriter, r *http.Request) {
-	enableCors(w)
+func liveHandler(c *gin.Context) {
 
 	rows, err := db.Query(`
 		SELECT message, created_at
@@ -135,24 +231,23 @@ func liveHandler(w http.ResponseWriter, r *http.Request) {
 		LIMIT 20
 	`)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		c.JSON(500, gin.H{"error": "database query failed"})
 		return
 	}
 	defer rows.Close()
 
-	var result []map[string]interface{}
+	var result []LiveEntry
 
 	for rows.Next() {
-		var message string
-		var created string
+		var entry LiveEntry
 
-		rows.Scan(&message, &created)
+		if err := rows.Scan(&entry.Message, &entry.CreatedAt); err != nil {
+			c.JSON(500, gin.H{"error": "scan failed"})
+			return
+		}
 
-		result = append(result, map[string]interface{}{
-			"message": message,
-			"created_at": created,
-		})
+		result = append(result, entry)
 	}
 
-	json.NewEncoder(w).Encode(result)
+	c.JSON(200, result)
 }
