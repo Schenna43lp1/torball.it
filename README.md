@@ -1,6 +1,6 @@
 # Torball League Manager
 
-PHP/MySQL Torball league system.
+PHP/MySQL Torball league system with Docker support.
 
 ## Features
 
@@ -9,40 +9,74 @@ PHP/MySQL Torball league system.
 - Goal difference
 - Team statistics
 - Admin panel
-- MySQL/MariaDB support
+- Live ticker
+- Telegram bot integration
+- MariaDB support
+- Docker deployment
+- phpMyAdmin included
 - Responsive design
+
+## Included Services
+
+- PHP 8.3 Apache
+- MariaDB 11
+- phpMyAdmin
+- Telegram notifications
 
 ## Pages
 
 - `/index.php` → League table
 - `/matches.php` → Results
 - `/stats.php` → Statistics
+- `/live.php` → Live ticker
 - `/admin/login.php` → Admin login
+- `/admin/live_ticker.php` → Live ticker management
 
-## Stack
-
-- PHP 8
-- MariaDB / MySQL
-- HTML/CSS
-- Bootstrap-ready structure
-
-## Setup
+## Quick Start
 
 ```bash
-mysql -u root -p torball_league < sql/schema.sql
-mysql -u root -p torball_league < sql/seed.sql
+cp .env.example .env
+nano .env
+chmod +x install.sh
+./install.sh
 ```
 
-Edit:
+## Docker
 
-```php
-config.php
+```bash
+docker compose up -d --build
 ```
 
-Default admin:
+## URLs
+
+```txt
+Web:         http://SERVER-IP:8080
+phpMyAdmin: http://SERVER-IP:8081
+```
+
+## Default Admin
 
 ```txt
 admin / admin123
 ```
 
 Change password immediately.
+
+## Telegram Setup
+
+Edit `.env`
+
+```env
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+```
+
+## Future Features
+
+- WebSocket live updates
+- OBS live overlay
+- REST API
+- Mobile referee panel
+- PWA support
+- Match event timeline
+- Push notifications
