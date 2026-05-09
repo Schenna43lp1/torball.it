@@ -1,0 +1,50 @@
+version: '3.9'
+
+services:
+  torball-web:
+    build: .
+    container_name: torball-web
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      DB_HOST: torball-db
+      DB_NAME: torball_league
+      DB_USER: torball
+      DB_PASS: torballpass
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+    volumes:
+      - ./:/var/www/html
+    depends_on:
+      - torball-db
+
+  torball-db:
+    image: mariadb:11
+    container_name: torball-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: torball_league
+      MYSQL_USER: torball
+      MYSQL_PASSWORD: torballpass
+    ports:
+      - "3306:3306"
+    volumes:
+      - torball_db:/var/lib/mysql
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: torball-phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    environment:
+      PMA_HOST: torball-db
+      PMA_USER: root
+      PMA_PASSWORD: rootpass
+    depends_on:
+      - torball-db
+
+volumes:
+  torball_db:
