@@ -1,0 +1,13 @@
+{
+  "name": "torball-live-websocket",
+  "version": "1.0.0",
+  "description": "WebSocket live ticker server for Torball League Manager",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.3",
+    "ws": "^8.16.0"
+  }
+}
