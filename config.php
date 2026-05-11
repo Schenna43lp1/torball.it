@@ -6,6 +6,7 @@ ini_set('log_errors', '1');
 
 $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
 
+session_name('TORBALLSESSID');
 session_set_cookie_params([
     'lifetime' => 0,
     'path' => '/',
@@ -15,18 +16,20 @@ session_set_cookie_params([
     'samesite' => 'Lax',
 ]);
 
-session_start();
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
 
 header('X-Frame-Options: SAMEORIGIN');
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
-header("Content-Security-Policy: default-src 'self'; connect-src 'self' ws: wss:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:;");
+header("Content-Security-Policy: default-src 'self'; connect-src 'self' ws: wss: http://localhost:8082 http://127.0.0.1:8082; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:;");
 
-$DB_HOST = getenv('DB_HOST') ?: 'localhost';
+$DB_HOST = getenv('DB_HOST') ?: 'torball-db';
 $DB_NAME = getenv('DB_NAME') ?: 'torball_league';
 $DB_USER = getenv('DB_USER') ?: 'torball';
-$DB_PASS = getenv('DB_PASS') ?: '';
+$DB_PASS = getenv('DB_PASS') ?: 'torballpass';
 
 try {
     $pdo = new PDO(
@@ -60,13 +63,18 @@ function csrf_token(): string {
     if (empty($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     }
+
     return $_SESSION['csrf_token'];
 }
 
 function verify_csrf(): void {
-    $token = $_POST['csrf_token'] ?? '';
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $token)) {
+    $sessionToken = $_SESSION['csrf_token'] ?? '';
+    $postedToken = $_POST['csrf_token'] ?? '';
+
+    if ($sessionToken === '' || $postedToken === '' || !hash_equals($sessionToken, $postedToken)) {
+        unset($_SESSION['csrf_token']);
         http_response_code(403);
-        exit('Invalid CSRF token.');
+        echo 'Invalid CSRF token. Please go back, reload the page with CTRL+F5 and try again.';
+        exit;
     }
 }
