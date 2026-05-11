@@ -1,4 +1,4 @@
-name: Deploy to Server
+name: Deploy Main
 
 on:
   push:
@@ -10,15 +10,67 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy via SSH
+      - name: Deploy application
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
           script: |
-            cd /root/torball/torball.it
-            git pull origin main
+            set -e
+
+            APP_DIR="/root/torball/torball.it"
+            BRANCH="main"
+
+            cd "$APP_DIR"
+
+            echo "[+] Saving current commit"
+            OLD_COMMIT=$(git rev-parse HEAD)
+            echo "$OLD_COMMIT" > .last_good_commit
+
+            echo "[+] Updating repository"
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+            git reset --hard "origin/$BRANCH"
+
+            echo "[+] Building containers"
             docker compose up -d --build
-            docker compose ps
+
+            echo "[+] Waiting for startup"
+            sleep 20
+
+            echo "[+] API healthcheck"
+            curl -fsS http://localhost:8082/api/health
+
+            echo "[+] Frontend healthcheck"
+            curl -fsS http://localhost:8080 > /dev/null
+
+            echo "[+] Deployment successful"
+
+      - name: Rollback if deployment fails
+        if: failure()
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+
+            APP_DIR="/root/torball/torball.it"
+
+            cd "$APP_DIR"
+
+            if [ -f .last_good_commit ]; then
+              OLD_COMMIT=$(cat .last_good_commit)
+              git reset --hard "$OLD_COMMIT"
+              docker compose up -d --build
+              sleep 20
+              curl -fsS http://localhost:8082/api/health
+              curl -fsS http://localhost:8080 > /dev/null
+            else
+              echo "[!] No rollback point found"
+              exit 1
+            fi
