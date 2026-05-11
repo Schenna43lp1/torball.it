@@ -26,7 +26,7 @@
         <h1>BSSG Südtirol Torball</h1>
         <p>
             Aktuelle Ergebnisse, Tabelle, Live-Ticker und Statistiken für die Torball-Saison.
-            Schnell, übersichtlich und bereit für Spieltage.
+            Schnell, modern und bereit für echte Spieltage.
         </p>
         <div class="hero-actions">
             <a class="btn" href="matches.php">Spiele ansehen</a>
@@ -48,6 +48,22 @@
         <div class="card highlight">
             <h2>Live am Spieltag</h2>
             <p>Live-Meldungen, Zwischenstände und wichtige Ereignisse direkt im Browser.</p>
+        </div>
+    </section>
+
+    <section class="grid">
+        <div class="card">
+            <h2>Letzte Ergebnisse</h2>
+            <div id="latest-results" class="results-list">
+                <p>Lade Ergebnisse…</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Nächste Spiele</h2>
+            <div id="next-matches" class="next-list">
+                <p>Lade Spiele…</p>
+            </div>
         </div>
     </section>
 
@@ -81,24 +97,6 @@
             </table>
         </div>
     </section>
-
-    <section class="grid">
-        <div class="card">
-            <h2>Spielplan</h2>
-            <p>Alle Spieltage und Ergebnisse der Saison.</p>
-            <a class="text-link" href="matches.php">Zu den Spielen →</a>
-        </div>
-        <div class="card">
-            <h2>Statistiken</h2>
-            <p>Offensive, Defensive, Punkte, Torverhältnis und weitere Kennzahlen.</p>
-            <a class="text-link" href="stats.php">Statistiken öffnen →</a>
-        </div>
-        <div class="card">
-            <h2>Adminbereich</h2>
-            <p>Ergebnisse verwalten, Live-Ticker bedienen und Daten pflegen.</p>
-            <a class="text-link" href="admin/login.php">Admin Login →</a>
-        </div>
-    </section>
 </main>
 
 <footer>
@@ -123,21 +121,28 @@ async function loadHealth() {
 
 async function loadTable() {
     const tbody = document.querySelector('#table tbody');
+
     try {
         const res = await fetch(apiBase + '/api/table');
         const data = await res.json();
+
         tbody.innerHTML = '';
 
-        if (!Array.isArray(data) || data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9">Noch keine Tabellendaten vorhanden.</td></tr>';
-            return;
-        }
-
         let rank = 1;
+
         data.forEach(team => {
             const row = document.createElement('tr');
+
+            if(rank <= 3) {
+                row.classList.add('table-top');
+            }
+
+            if(rank >= data.length - 1) {
+                row.classList.add('table-relegation');
+            }
+
             row.innerHTML = `
-                <td>${rank++}</td>
+                <td>${rank}</td>
                 <td><strong>${team.team}</strong></td>
                 <td>${team.games_played}</td>
                 <td>${team.wins}</td>
@@ -147,15 +152,67 @@ async function loadTable() {
                 <td>${team.goal_difference}</td>
                 <td><strong>${team.points}</strong></td>
             `;
+
             tbody.appendChild(row);
+            rank++;
         });
     } catch (error) {
         tbody.innerHTML = '<tr><td colspan="9">Tabelle konnte nicht geladen werden.</td></tr>';
     }
 }
 
+async function loadMatches() {
+    try {
+        const res = await fetch(apiBase + '/api/matches');
+        const matches = await res.json();
+
+        const latest = document.getElementById('latest-results');
+        const upcoming = document.getElementById('next-matches');
+
+        latest.innerHTML = '';
+        upcoming.innerHTML = '';
+
+        const played = matches.filter(m => m.match_status === 'played').slice(-5).reverse();
+        const scheduled = matches.filter(m => m.match_status !== 'played').slice(0,5);
+
+        played.forEach(match => {
+            const el = document.createElement('div');
+            el.className = 'match-card';
+            el.innerHTML = `
+                <div>
+                    <strong>${match.home_team}</strong><br>
+                    <small>vs ${match.away_team}</small>
+                </div>
+                <div class="match-score">
+                    ${match.home_goals} : ${match.away_goals}
+                </div>
+            `;
+            latest.appendChild(el);
+        });
+
+        scheduled.forEach(match => {
+            const el = document.createElement('div');
+            el.className = 'match-card';
+            el.innerHTML = `
+                <div>
+                    <strong>${match.home_team}</strong><br>
+                    <small>vs ${match.away_team}</small>
+                </div>
+                <div class="match-score">
+                    VS
+                </div>
+            `;
+            upcoming.appendChild(el);
+        });
+    } catch (error) {
+        document.getElementById('latest-results').innerHTML = '<p>Keine Ergebnisse verfügbar.</p>';
+        document.getElementById('next-matches').innerHTML = '<p>Keine Spiele verfügbar.</p>';
+    }
+}
+
 loadHealth();
 loadTable();
+loadMatches();
 </script>
 </body>
 </html>
