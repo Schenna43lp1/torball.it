@@ -24,7 +24,7 @@ header('X-Frame-Options: SAMEORIGIN');
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
-header("Content-Security-Policy: default-src 'self'; connect-src 'self' ws: wss: http://localhost:8082 http://127.0.0.1:8082; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:;");
+header("Content-Security-Policy: default-src 'self'; connect-src 'self' http: https: ws: wss:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:;");
 
 $DB_HOST = getenv('DB_HOST') ?: 'torball-db';
 $DB_NAME = getenv('DB_NAME') ?: 'torball_league';
