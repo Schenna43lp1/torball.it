@@ -1,0 +1,3 @@
+# Paste the official Torball results text here.
+# Then run:
+# docker exec -it torball-web php /var/www/html/scripts/import_results_text.php
