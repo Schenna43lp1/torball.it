@@ -1,0 +1,122 @@
+services:
+  torball-web:
+    build: .
+    container_name: torball-web
+    restart: unless-stopped
+    environment:
+      DB_HOST: torball-db
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      WS_BROADCAST_SECRET: ${WS_BROADCAST_SECRET}
+    volumes:
+      - ./:/var/www/html:ro
+    depends_on:
+      torball-db:
+        condition: service_healthy
+      torball-api:
+        condition: service_started
+      websocket:
+        condition: service_started
+    networks:
+      - internal
+      - public
+
+  torball-api:
+    build: ./api
+    container_name: torball-api
+    restart: unless-stopped
+    environment:
+      DB_HOST: torball-db
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      REDIS_ADDR: redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-60}
+    depends_on:
+      torball-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+      - public
+
+  websocket:
+    build: ./websocket
+    container_name: torball-websocket
+    restart: unless-stopped
+    environment:
+      WS_BROADCAST_SECRET: ${WS_BROADCAST_SECRET}
+    networks:
+      - public
+
+  torball-db:
+    image: mariadb:11
+    container_name: torball-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASS}
+    volumes:
+      - torball_db:/var/lib/mysql
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: torball-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - torball_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: torball-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - torball-web
+      - torball-api
+      - websocket
+    networks:
+      - public
+
+volumes:
+  torball_db:
+  torball_redis:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+    driver: bridge
+    internal: true
+  public:
+    driver: bridge
