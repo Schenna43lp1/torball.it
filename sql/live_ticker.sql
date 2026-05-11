@@ -1,8 +1,0 @@
-CREATE TABLE live_ticker (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    match_id INT NOT NULL,
-    message TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
-);
