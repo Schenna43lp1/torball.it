@@ -12,12 +12,13 @@ $lines = explode("\n", $content);
 
 $seasonId = 1;
 $matchdayId = null;
-$round = 0;
+
+$pdo->exec("INSERT INTO seasons (id, name) VALUES (1, 'Serie A 2026') ON DUPLICATE KEY UPDATE name = VALUES(name)");
 
 foreach ($lines as $line) {
     $line = trim($line);
 
-    if ($line === '' || str_starts_with($line, '#')) {
+    if ($line === '' || str_starts_with($line, '#') || strtolower($line) === 'incontri') {
         continue;
     }
 
@@ -26,22 +27,35 @@ foreach ($lines as $line) {
         $location = trim($m[2]);
         $date = DateTime::createFromFormat('d/m/Y', $m[3])->format('Y-m-d');
 
-        $stmt = $pdo->prepare('INSERT INTO matchdays (season_id, round_number, name, location, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?)');
-        $stmt->execute([
-            $seasonId,
-            $round,
-            $round . 'a Giornata',
-            $location,
-            $date,
-            $date
-        ]);
+        $stmt = $pdo->prepare('SELECT id FROM matchdays WHERE season_id = ? AND round_number = ? AND location = ? AND start_date = ? LIMIT 1');
+        $stmt->execute([$seasonId, $round, $location, $date]);
+        $existing = $stmt->fetchColumn();
 
-        $matchdayId = (int)$pdo->lastInsertId();
-        echo "Imported matchday {$round}\n";
+        if ($existing) {
+            $matchdayId = (int)$existing;
+        } else {
+            $insert = $pdo->prepare('INSERT INTO matchdays (season_id, round_number, name, location, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?)');
+            $insert->execute([
+                $seasonId,
+                $round,
+                $round . 'a Giornata',
+                $location,
+                $date,
+                $date
+            ]);
+            $matchdayId = (int)$pdo->lastInsertId();
+        }
+
+        echo "Matchday ready: {$round} {$location}\n";
         continue;
     }
 
     if (preg_match('/^\(Partita n\. (\d+)\) (.+?) - (.+?) : (\d+) - (\d+)/', $line, $m)) {
+        if ($matchdayId === null) {
+            echo "Skipping match without matchday: {$line}\n";
+            continue;
+        }
+
         $matchNo = (int)$m[1];
         $home = trim($m[2]);
         $away = trim($m[3]);
@@ -68,7 +82,17 @@ foreach ($lines as $line) {
             $awayTeam = $pdo->lastInsertId();
         }
 
-        $insertMatch = $pdo->prepare('INSERT INTO matches (id, matchday_id, home_team_id, away_team_id, home_goals, away_goals, match_status) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        $insertMatch = $pdo->prepare('
+            INSERT INTO matches (id, matchday_id, home_team_id, away_team_id, home_goals, away_goals, match_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                matchday_id = VALUES(matchday_id),
+                home_team_id = VALUES(home_team_id),
+                away_team_id = VALUES(away_team_id),
+                home_goals = VALUES(home_goals),
+                away_goals = VALUES(away_goals),
+                match_status = VALUES(match_status)
+        ');
 
         $insertMatch->execute([
             $matchNo,
@@ -80,7 +104,7 @@ foreach ($lines as $line) {
             'played'
         ]);
 
-        echo "Imported match {$matchNo}\n";
+        echo "Match imported/updated: {$matchNo}\n";
     }
 }
 
