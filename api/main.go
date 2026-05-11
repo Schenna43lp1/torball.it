@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -228,7 +227,7 @@ func tableHandler(c *gin.Context) {
 	for rows.Next() {
 		var entry TableEntry
 
-		rows.Scan(
+		if err := rows.Scan(
 			&entry.Team,
 			&entry.GamesPlayed,
 			&entry.Wins,
@@ -238,7 +237,10 @@ func tableHandler(c *gin.Context) {
 			&entry.GoalsAgainst,
 			&entry.GoalDifference,
 			&entry.Points,
-		)
+		); err != nil {
+			c.JSON(500, gin.H{"error": "scan failed"})
+			return
+		}
 
 		result = append(result, entry)
 	}
