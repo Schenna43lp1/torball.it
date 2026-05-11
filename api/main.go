@@ -21,8 +21,6 @@ var ctx = context.Background()
 
 var jwtSecret = []byte(getEnv("JWT_SECRET", "CHANGE_ME"))
 
-// Models
-
 type Claims struct {
 	Username string `json:"username"`
 	Role     string `json:"role"`
@@ -41,8 +39,19 @@ type TableEntry struct {
 	Points         int    `json:"points"`
 }
 
-func main() {
+type MatchEntry struct {
+	ID          int     `json:"id"`
+	HomeTeam    string  `json:"home_team"`
+	AwayTeam    string  `json:"away_team"`
+	HomeGoals   *int    `json:"home_goals"`
+	AwayGoals   *int    `json:"away_goals"`
+	MatchStatus string  `json:"match_status"`
+	Matchday    *string `json:"matchday"`
+	Location    *string `json:"location"`
+	StartDate   *string `json:"start_date"`
+}
 
+func main() {
 	dsn := os.Getenv("DB_USER") + ":" + os.Getenv("DB_PASS") + "@tcp(" + os.Getenv("DB_HOST") + ":3306)/" + os.Getenv("DB_NAME") + "?parseTime=true"
 
 	var err error
@@ -70,6 +79,7 @@ func main() {
 	{
 		api.GET("/health", healthHandler)
 		api.GET("/table", tableHandler)
+		api.GET("/matches", matchesHandler)
 		api.GET("/docs", swaggerHandler)
 		api.POST("/token", tokenHandler)
 	}
@@ -119,7 +129,6 @@ func corsMiddleware() gin.HandlerFunc {
 
 func jwtMiddleware(roles ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			c.AbortWithStatusJSON(401, gin.H{"error": "missing token"})
@@ -151,7 +160,6 @@ func jwtMiddleware(roles ...string) gin.HandlerFunc {
 }
 
 func tokenHandler(c *gin.Context) {
-
 	var req struct {
 		Username string `json:"username"`
 		Role     string `json:"role"`
@@ -184,7 +192,6 @@ func tokenHandler(c *gin.Context) {
 }
 
 func healthHandler(c *gin.Context) {
-
 	dbStatus := "ok"
 	redisStatus := "ok"
 
@@ -197,14 +204,13 @@ func healthHandler(c *gin.Context) {
 	}
 
 	c.JSON(200, gin.H{
-		"status": "ok",
+		"status":   "ok",
 		"database": dbStatus,
-		"redis": redisStatus,
+		"redis":    redisStatus,
 	})
 }
 
 func tableHandler(c *gin.Context) {
-
 	cached, err := rdb.Get(ctx, "table_cache").Result()
 	if err == nil {
 		c.Data(200, "application/json", []byte(cached))
@@ -246,31 +252,101 @@ func tableHandler(c *gin.Context) {
 	}
 
 	jsonData, _ := json.Marshal(result)
-
 	rdb.Set(ctx, "table_cache", jsonData, 30*time.Second)
-
 	c.Data(200, "application/json", jsonData)
+}
+
+func matchesHandler(c *gin.Context) {
+	rows, err := db.Query(`
+		SELECT
+			m.id,
+			ht.name AS home_team,
+			at.name AS away_team,
+			m.home_goals,
+			m.away_goals,
+			m.match_status,
+			md.name,
+			md.location,
+			DATE_FORMAT(md.start_date, '%Y-%m-%d') AS start_date
+		FROM matches m
+		JOIN teams ht ON ht.id = m.home_team_id
+		JOIN teams at ON at.id = m.away_team_id
+		LEFT JOIN matchdays md ON md.id = m.matchday_id
+		ORDER BY m.id ASC
+	`)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "database query failed"})
+		return
+	}
+	defer rows.Close()
+
+	var result []MatchEntry
+
+	for rows.Next() {
+		var entry MatchEntry
+		var homeGoals sql.NullInt64
+		var awayGoals sql.NullInt64
+		var matchday sql.NullString
+		var location sql.NullString
+		var startDate sql.NullString
+
+		if err := rows.Scan(
+			&entry.ID,
+			&entry.HomeTeam,
+			&entry.AwayTeam,
+			&homeGoals,
+			&awayGoals,
+			&entry.MatchStatus,
+			&matchday,
+			&location,
+			&startDate,
+		); err != nil {
+			c.JSON(500, gin.H{"error": "scan failed"})
+			return
+		}
+
+		if homeGoals.Valid {
+			value := int(homeGoals.Int64)
+			entry.HomeGoals = &value
+		}
+		if awayGoals.Valid {
+			value := int(awayGoals.Int64)
+			entry.AwayGoals = &value
+		}
+		if matchday.Valid {
+			entry.Matchday = &matchday.String
+		}
+		if location.Valid {
+			entry.Location = &location.String
+		}
+		if startDate.Valid {
+			entry.StartDate = &startDate.String
+		}
+
+		result = append(result, entry)
+	}
+
+	c.JSON(200, result)
 }
 
 func swaggerHandler(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"openapi": "3.0.0",
 		"info": gin.H{
-			"title": "Torball API",
+			"title":   "Torball API",
 			"version": "1.0.0",
 		},
 		"paths": gin.H{
 			"/api/table": gin.H{
-				"get": gin.H{
-					"summary": "League table",
-				},
+				"get": gin.H{"summary": "League table"},
+			},
+			"/api/matches": gin.H{
+				"get": gin.H{"summary": "Matches"},
 			},
 		},
 	})
 }
 
 func secureHandler(c *gin.Context) {
-	c.JSON(200, gin.H{
-		"status": "authorized",
-	})
+	c.JSON(200, gin.H{"status": "authorized"})
 }
