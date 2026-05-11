@@ -1,6 +1,9 @@
 <?php
 require __DIR__ . '/../config.php';
 require_admin();
+
+$username = $_SESSION['admin_username'] ?? 'Admin';
+$role = $_SESSION['admin_role'] ?? 'admin';
 ?>
 <!doctype html>
 <html lang="de">
@@ -20,8 +23,8 @@ require_admin();
 </header>
 <main>
     <div class="card">
-        <h2>Willkommen <?= e($_SESSION['admin_username']) ?></h2>
-        <p>Rolle: <?= e($_SESSION['admin_role']) ?></p>
+        <h2>Willkommen <?= e($username) ?></h2>
+        <p>Rolle: <?= e($role) ?></p>
     </div>
 
     <div class="card">
