@@ -3,19 +3,31 @@ name: Docker Build
 on:
   push:
     branches:
+      - dev
+      - main
+
+  pull_request:
+    branches:
+      - dev
       - main
 
 jobs:
-  docker:
+  docker-build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker images
+      - name: Create environment file
         run: |
-          docker compose build
+          cp .env.example .env
+
+      - name: Validate docker compose
+        run: docker compose config
+
+      - name: Build stack
+        run: docker compose build

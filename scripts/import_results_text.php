@@ -11,7 +11,6 @@ $content = file_get_contents($file);
 $lines = explode("\n", $content);
 
 $seasonId = 1;
-$currentMatchday = null;
 $matchdayId = null;
 $round = 0;
 

@@ -1,0 +1,120 @@
+services:
+  torball-web:
+    build: .
+    container_name: torball-dev-web
+    restart: unless-stopped
+    ports:
+      - "9080:80"
+    environment:
+      DB_HOST: torball-dev-db
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      WS_BROADCAST_SECRET: ${WS_BROADCAST_SECRET}
+    volumes:
+      - ./:/var/www/html
+    depends_on:
+      torball-db:
+        condition: service_healthy
+      torball-api:
+        condition: service_started
+      websocket:
+        condition: service_started
+    networks:
+      - torball-dev-net
+
+  torball-api:
+    build: ./api
+    container_name: torball-dev-api
+    restart: unless-stopped
+    ports:
+      - "9082:8082"
+    environment:
+      DB_HOST: torball-dev-db
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      REDIS_ADDR: torball-dev-redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+    depends_on:
+      torball-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - torball-dev-net
+
+  websocket:
+    build: ./websocket
+    container_name: torball-dev-websocket
+    restart: unless-stopped
+    ports:
+      - "9001:3001"
+    environment:
+      WS_BROADCAST_SECRET: ${WS_BROADCAST_SECRET}
+    networks:
+      - torball-dev-net
+
+  torball-db:
+    image: mariadb:11
+    container_name: torball-dev-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASS}
+    ports:
+      - "9306:3306"
+    volumes:
+      - torball_dev_db:/var/lib/mysql
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - torball-dev-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: torball-dev-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - torball_dev_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - torball-dev-net
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: torball-dev-phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "9081:80"
+    environment:
+      PMA_HOST: torball-dev-db
+      PMA_USER: root
+      PMA_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    depends_on:
+      torball-db:
+        condition: service_healthy
+    networks:
+      - torball-dev-net
+
+volumes:
+  torball_dev_db:
+  torball_dev_redis:
+
+networks:
+  torball-dev-net:
+    driver: bridge

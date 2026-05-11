@@ -1,9 +1,9 @@
-name: Deploy Main
+name: Deploy Dev
 
 on:
   push:
     branches:
-      - main
+      - dev
 
 jobs:
   deploy:
@@ -21,7 +21,7 @@ jobs:
             set -e
 
             APP_DIR="/root/torball/torball.it"
-            BRANCH="main"
+            BRANCH="dev"
 
             cd "$APP_DIR"
 
@@ -39,6 +39,9 @@ jobs:
 
             echo "[+] Waiting for startup"
             sleep 20
+
+            echo "[+] Container status"
+            docker compose ps
 
             echo "[+] API healthcheck"
             curl -fsS http://localhost:8082/api/health
@@ -65,11 +68,19 @@ jobs:
 
             if [ -f .last_good_commit ]; then
               OLD_COMMIT=$(cat .last_good_commit)
+
+              echo "[!] Rolling back to $OLD_COMMIT"
+
               git reset --hard "$OLD_COMMIT"
+
               docker compose up -d --build
+
               sleep 20
+
               curl -fsS http://localhost:8082/api/health
               curl -fsS http://localhost:8080 > /dev/null
+
+              echo "[+] Rollback successful"
             else
               echo "[!] No rollback point found"
               exit 1
