@@ -2,11 +2,10 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
-COPY go.mod .
-RUN go mod download
+COPY go.mod ./
+COPY main.go ./
 
-COPY . .
-
+RUN go mod tidy
 RUN go build -o torball-api .
 
 FROM alpine:latest
