@@ -1,0 +1,2 @@
+<?php require __DIR__.'/config.php'; ?>
+<!doctype html><html lang='de'><head><meta charset='utf-8'><title>Stats</title><link rel='stylesheet' href='assets/css/style.css'></head><body><header><h1>Statistiken</h1></header><main><div class='card'><h2>API Info</h2><p>Powered by Go + Redis + Gin</p></div></main></body></html>
