@@ -30,7 +30,7 @@
     </table>
 </main>
 <script>
-const apiBase = location.protocol + '//' + location.hostname + ':8082';
+const apiBase = '';
 
 function formatScore(match) {
     const homeGoals = match.home_goals ?? '-';
