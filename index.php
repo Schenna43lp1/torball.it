@@ -124,7 +124,7 @@
 
 <script src="assets/js/app.js"></script>
 <script>
-const apiBase = location.protocol + '//' + location.hostname + ':8082';
+const apiBase = '';
 
 async function loadHealth() {
     const badge = document.getElementById('api-status');
