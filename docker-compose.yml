@@ -1,74 +1,120 @@
+name: torball
+
+x-restart-policy: &restart_policy
+  restart: unless-stopped
+
+x-logging: &default_logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-app-env: &app_env
+  DB_HOST: torball-db
+  DB_NAME: ${DB_NAME}
+  DB_USER: ${DB_USER}
+  DB_PASS: ${DB_PASS}
+
 services:
   torball-web:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: torball-web
-    restart: unless-stopped
+    <<: [*restart_policy, *default_logging]
     ports:
-      - "8080:80"
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8080}:80"
     environment:
-      DB_HOST: torball-db
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASS: ${DB_PASS}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      <<: *app_env
+      APP_ENV: ${APP_ENV:-production}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       WS_BROADCAST_SECRET: ${WS_BROADCAST_SECRET}
     volumes:
-      - ./:/var/www/html
-    depends_on:
-      torball-db:
-        condition: service_healthy
-      torball-api:
-        condition: service_started
-      websocket:
-        condition: service_started
-    networks:
-      - torball-net
-
-  torball-api:
-    build: ./api
-    container_name: torball-api
-    restart: unless-stopped
-    ports:
-      - "8082:8082"
-    environment:
-      DB_HOST: torball-db
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASS: ${DB_PASS}
-      REDIS_ADDR: redis:6379
-      JWT_SECRET: ${JWT_SECRET}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      - ./:/var/www/html:rw
     depends_on:
       torball-db:
         condition: service_healthy
       redis:
         condition: service_healthy
+      torball-api:
+        condition: service_started
+      websocket:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@fsockopen(\"127.0.0.1\", 80) ? 0 : 1);'"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
-      - torball-net
+      - torball-public
+      - torball-internal
+
+  torball-api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: torball-api
+    <<: [*restart_policy, *default_logging]
+    ports:
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-8082}:8082"
+    environment:
+      <<: *app_env
+      REDIS_ADDR: redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080}
+    depends_on:
+      torball-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8082/health >/dev/null 2>&1 || wget -qO- http://127.0.0.1:8082/ >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - torball-internal
 
   websocket:
-    build: ./websocket
+    build:
+      context: ./websocket
+      dockerfile: Dockerfile
     container_name: torball-websocket
-    restart: unless-stopped
+    <<: [*restart_policy, *default_logging]
     ports:
-      - "3001:3001"
+      - "${WS_BIND:-127.0.0.1}:${WS_PORT:-3001}:3001"
     environment:
+      NODE_ENV: ${NODE_ENV:-production}
       WS_BROADCAST_SECRET: ${WS_BROADCAST_SECRET}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health >/dev/null 2>&1 || wget -qO- http://127.0.0.1:3001/ >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
-      - torball-net
+      - torball-internal
 
   torball-db:
     image: mariadb:11
     container_name: torball-db
-    restart: unless-stopped
+    <<: [*restart_policy, *default_logging]
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-256M}
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${DB_NAME}
       MYSQL_USER: ${DB_USER}
       MYSQL_PASSWORD: ${DB_PASS}
-    ports:
-      - "3306:3306"
+      TZ: ${TZ:-Europe/Rome}
+    expose:
+      - "3306"
     volumes:
       - torball_db:/var/lib/mysql
       - ./sql:/docker-entrypoint-initdb.d:ro
@@ -77,14 +123,25 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 30s
     networks:
-      - torball-net
+      - torball-internal
 
   redis:
     image: redis:7-alpine
     container_name: torball-redis
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    <<: [*restart_policy, *default_logging]
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --save
+      - "60"
+      - "1"
+      - --loglevel
+      - warning
+    expose:
+      - "6379"
     volumes:
       - torball_redis:/data
     healthcheck:
@@ -92,29 +149,37 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 10s
     networks:
-      - torball-net
+      - torball-internal
 
   phpmyadmin:
     image: phpmyadmin:latest
     container_name: torball-phpmyadmin
-    restart: unless-stopped
+    profiles:
+      - tools
+    <<: [*restart_policy, *default_logging]
     ports:
-      - "8081:80"
+      - "${PMA_BIND:-127.0.0.1}:${PMA_PORT:-8081}:80"
     environment:
       PMA_HOST: torball-db
+      PMA_PORT: 3306
       PMA_USER: root
       PMA_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      UPLOAD_LIMIT: ${PMA_UPLOAD_LIMIT:-128M}
     depends_on:
       torball-db:
         condition: service_healthy
     networks:
-      - torball-net
+      - torball-internal
 
 volumes:
   torball_db:
   torball_redis:
 
 networks:
-  torball-net:
+  torball-public:
     driver: bridge
+  torball-internal:
+    driver: bridge
+    internal: true
