@@ -6,6 +6,8 @@
     <title>BSSG Südtirol - Torball</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Offizielle Torball-Übersicht für BSSG Südtirol mit Tabelle, Ergebnissen, Live-Ticker und Statistiken.">
+    <meta name="theme-color" content="#1e3a8a">
+    <link rel="manifest" href="manifest.webmanifest">
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
@@ -15,13 +17,14 @@
             <span class="brand-mark"></span>
             <strong>BSSG Südtirol</strong>
         </div>
-
-        <div>
+        <button class="nav-toggle" type="button" aria-label="Menü öffnen" aria-expanded="false">☰</button>
+        <div class="nav-links" id="nav-links">
             <a class="active" href="index.php">Start</a>
             <a href="matches.php">Spiele</a>
             <a href="stats.php">Statistiken</a>
             <a href="live.php">Live</a>
             <a href="admin/login.php">Admin</a>
+            <button class="theme-toggle" type="button" aria-label="Darkmode umschalten">🌙</button>
         </div>
     </nav>
 
@@ -77,19 +80,8 @@
     </section>
 
     <section class="grid">
-        <div class="card">
-            <h2>Letzte Ergebnisse</h2>
-            <div id="latest-results" class="results-list">
-                <p>Lade Ergebnisse…</p>
-            </div>
-        </div>
-
-        <div class="card">
-            <h2>Nächste Spiele</h2>
-            <div id="next-matches" class="next-list">
-                <p>Lade Spiele…</p>
-            </div>
-        </div>
+        <div class="card"><h2>Letzte Ergebnisse</h2><div id="latest-results" class="results-list"><p>Lade Ergebnisse…</p></div></div>
+        <div class="card"><h2>Nächste Spiele</h2><div id="next-matches" class="next-list"><p>Lade Spiele…</p></div></div>
     </section>
 
     <section class="card">
@@ -101,7 +93,6 @@
 
             <span id="api-status" class="badge">API lädt…</span>
         </div>
-
         <div class="table-wrap">
             <table id="table">
                 <thead>
@@ -131,8 +122,9 @@
     <p>© 2026 BSSG Südtirol • Torball System • Südtirol Edition</p>
 </footer>
 
+<script src="assets/js/app.js"></script>
 <script>
-const apiBase = 'http://' + location.hostname + ':8082';
+const apiBase = location.protocol + '//' + location.hostname + ':8082';
 
 async function loadHealth() {
     const badge = document.getElementById('api-status');
@@ -156,15 +148,11 @@ async function loadHealth() {
 
 async function loadTable() {
     const tbody = document.querySelector('#table tbody');
-
     try {
         const res = await fetch(apiBase + '/api/table');
         const data = await res.json();
-
         tbody.innerHTML = '';
-
         let rank = 1;
-
         data.forEach(team => {
             const row = document.createElement('tr');
 
@@ -200,10 +188,8 @@ async function loadMatches() {
     try {
         const res = await fetch(apiBase + '/api/matches');
         const matches = await res.json();
-
         const latest = document.getElementById('latest-results');
         const upcoming = document.getElementById('next-matches');
-
         latest.innerHTML = '';
         upcoming.innerHTML = '';
 
@@ -233,7 +219,7 @@ async function loadMatches() {
 
             latest.appendChild(el);
         });
-
+        if (scheduled.length === 0) upcoming.innerHTML = '<p>Aktuell keine offenen Spiele.</p>';
         scheduled.forEach(match => {
             const el = document.createElement('div');
             el.className = 'match-card';
