@@ -11,9 +11,13 @@
 <body>
 <header class="hero">
     <nav class="topnav">
-        <strong>BSSG Südtirol</strong>
+        <div class="brand">
+            <span class="brand-mark"></span>
+            <strong>BSSG Südtirol</strong>
+        </div>
+
         <div>
-            <a href="index.php">Start</a>
+            <a class="active" href="index.php">Start</a>
             <a href="matches.php">Spiele</a>
             <a href="stats.php">Statistiken</a>
             <a href="live.php">Live</a>
@@ -22,32 +26,53 @@
     </nav>
 
     <section class="hero-content">
-        <p class="eyebrow">Torball • Südtirol • Serie A</p>
-        <h1>BSSG Südtirol Torball</h1>
+        <p class="eyebrow">🏔️ Torball • Südtirol • Serie A</p>
+
+        <h1>
+            BSSG Südtirol<br>
+            Torball Portal
+        </h1>
+
         <p>
-            Aktuelle Ergebnisse, Tabelle, Live-Ticker und Statistiken für die Torball-Saison.
-            Schnell, modern und bereit für echte Spieltage.
+            Moderne Live-Plattform für Torball in Südtirol.
+            Ergebnisse, Tabelle, Live-Ticker und Spieltage in einem zentralen System – optimiert für Desktop, Mobile und PWA.
         </p>
+
         <div class="hero-actions">
             <a class="btn" href="matches.php">Spiele ansehen</a>
-            <a class="btn secondary" href="live.php">Live-Ticker</a>
+            <a class="btn secondary" href="live.php">Live-Ticker öffnen</a>
         </div>
     </section>
 </header>
 
 <main>
     <section class="grid cards-overview">
-        <div class="card highlight">
-            <h2>BSSG Südtirol 1</h2>
-            <p>Teamübersicht, Ergebnisse und Saisonleistung der ersten Mannschaft.</p>
+        <div class="card highlight champion">
+            <h2>🏆 Serie A 2025/26</h2>
+            <p>
+                GSD Alto Adige 2 beendet die Saison als Meister.
+                Alle Resultate, Statistiken und Tabellenstände zentral verfügbar.
+            </p>
+
+            <div class="meta-row">
+                <span class="pill">📍 Südtirol</span>
+                <span class="pill">⚡ Live System</span>
+                <span class="pill">📱 Mobile Ready</span>
+            </div>
         </div>
+
         <div class="card highlight">
-            <h2>BSSG Südtirol 2</h2>
-            <p>Aktuelle Resultate, direkte Duelle und Tabellenposition der zweiten Mannschaft.</p>
+            <h2>📊 Live Statistiken</h2>
+            <p>
+                Tabellen, Tore, Differenzen und Spielstände werden automatisch aus der API geladen und live aktualisiert.
+            </p>
         </div>
+
         <div class="card highlight">
-            <h2>Live am Spieltag</h2>
-            <p>Live-Meldungen, Zwischenstände und wichtige Ereignisse direkt im Browser.</p>
+            <h2>🔴 Live am Spieltag</h2>
+            <p>
+                Echtzeit-Spielstände, schnelle Updates und moderne Darstellung für Zuschauer und Teams.
+            </p>
         </div>
     </section>
 
@@ -71,8 +96,9 @@
         <div class="section-head">
             <div>
                 <h2>Aktuelle Tabelle</h2>
-                <p>Automatisch berechnet aus den eingetragenen Ergebnissen.</p>
+                <p>Automatisch berechnet aus allen eingetragenen Ergebnissen.</p>
             </div>
+
             <span id="api-status" class="badge">API lädt…</span>
         </div>
 
@@ -92,7 +118,9 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td colspan="9">Tabelle wird geladen…</td></tr>
+                    <tr>
+                        <td colspan="9">Tabelle wird geladen…</td>
+                    </tr>
                 </tbody>
             </table>
         </div>
@@ -100,7 +128,7 @@
 </main>
 
 <footer>
-    <p>© BSSG Südtirol • Torball System</p>
+    <p>© 2026 BSSG Südtirol • Torball System • Südtirol Edition</p>
 </footer>
 
 <script>
@@ -108,11 +136,18 @@ const apiBase = 'http://' + location.hostname + ':8082';
 
 async function loadHealth() {
     const badge = document.getElementById('api-status');
+
     try {
         const res = await fetch(apiBase + '/api/health');
         const data = await res.json();
-        badge.textContent = data.status === 'ok' ? 'API online' : 'API prüfen';
-        badge.className = data.status === 'ok' ? 'badge ok' : 'badge warn';
+
+        badge.textContent = data.status === 'ok'
+            ? 'API online'
+            : 'API prüfen';
+
+        badge.className = data.status === 'ok'
+            ? 'badge ok'
+            : 'badge warn';
     } catch (error) {
         badge.textContent = 'API offline';
         badge.className = 'badge error';
@@ -133,11 +168,11 @@ async function loadTable() {
         data.forEach(team => {
             const row = document.createElement('tr');
 
-            if(rank <= 3) {
+            if (rank <= 3) {
                 row.classList.add('table-top');
             }
 
-            if(rank >= data.length - 1) {
+            if (rank >= data.length - 1) {
                 row.classList.add('table-relegation');
             }
 
@@ -172,36 +207,48 @@ async function loadMatches() {
         latest.innerHTML = '';
         upcoming.innerHTML = '';
 
-        const played = matches.filter(m => m.match_status === 'played').slice(-5).reverse();
-        const scheduled = matches.filter(m => m.match_status !== 'played').slice(0,5);
+        const played = matches
+            .filter(m => m.match_status === 'played')
+            .slice(-5)
+            .reverse();
+
+        const scheduled = matches
+            .filter(m => m.match_status !== 'played')
+            .slice(0, 5);
 
         played.forEach(match => {
             const el = document.createElement('div');
             el.className = 'match-card';
+
             el.innerHTML = `
                 <div>
                     <strong>${match.home_team}</strong><br>
                     <small>vs ${match.away_team}</small>
                 </div>
+
                 <div class="match-score">
                     ${match.home_goals} : ${match.away_goals}
                 </div>
             `;
+
             latest.appendChild(el);
         });
 
         scheduled.forEach(match => {
             const el = document.createElement('div');
             el.className = 'match-card';
+
             el.innerHTML = `
                 <div>
                     <strong>${match.home_team}</strong><br>
                     <small>vs ${match.away_team}</small>
                 </div>
+
                 <div class="match-score">
                     VS
                 </div>
             `;
+
             upcoming.appendChild(el);
         });
     } catch (error) {
