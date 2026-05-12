@@ -59,7 +59,7 @@ services:
     container_name: torball-api
     <<: [*restart_policy, *default_logging]
     ports:
-      - "${API_BIND:-127.0.0.1}:${API_PORT:-8082}:8082"
+      - "${API_BIND:-0.0.0.0}:${API_PORT:-8082}:8082"
     environment:
       <<: *app_env
       REDIS_ADDR: redis:6379
@@ -77,6 +77,7 @@ services:
       retries: 5
       start_period: 20s
     networks:
+      - torball-public
       - torball-internal
 
   websocket:
@@ -86,7 +87,7 @@ services:
     container_name: torball-websocket
     <<: [*restart_policy, *default_logging]
     ports:
-      - "${WS_BIND:-127.0.0.1}:${WS_PORT:-3001}:3001"
+      - "${WS_BIND:-0.0.0.0}:${WS_PORT:-3001}:3001"
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       WS_BROADCAST_SECRET: ${WS_BROADCAST_SECRET}
@@ -97,6 +98,7 @@ services:
       retries: 5
       start_period: 20s
     networks:
+      - torball-public
       - torball-internal
 
   torball-db:
