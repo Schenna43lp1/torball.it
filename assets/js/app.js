@@ -59,7 +59,7 @@ async function refreshLiveData() {
 setInterval(refreshLiveData, 15000);
 
 const wsProtocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
-const ws = new WebSocket(wsProtocol + location.hostname + ':3001');
+const ws = new WebSocket(`${wsProtocol}${location.host}/ws`);
 
 ws.onmessage = () => {
     refreshLiveData();
